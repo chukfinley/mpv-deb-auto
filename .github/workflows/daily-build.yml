@@ -21,7 +21,11 @@ jobs:
           fetch-depth: 0  # we will create/update a state branch
 
       - name: Print environment
-        run: bash scripts/print_env.sh
+        run: |
+          echo "===== Environment ====="
+          echo "Runner: $(uname -a)"
+          echo "Date  : $(date -u)"
+          echo "======================="
 
       - name: Install base toolchain
         run: |
@@ -35,13 +39,13 @@ jobs:
             libgl1-mesa-dev \
             libasound2-dev libpulse-dev \
             libfreetype6-dev libfontconfig1-dev libfribidi-dev \
-            libjpeg-dev
+            libjpeg-dev \
+            devscripts equivs
 
       - name: Prepare state (previous hashes)
         id: state
         run: |
           set -euo pipefail
-          # Try to get the state branch (holds hashes.txt)
           if git ls-remote --exit-code origin state >/dev/null 2>&1; then
             git fetch origin state:state
             git checkout state
@@ -53,48 +57,45 @@ jobs:
             touch prev_hashes.txt
           fi
 
-      - name: Clone & update mpv-build; record current hashes
-        run: |
-          set -euo pipefail
-          mkdir -p out
-          bash scripts/build_and_package.sh || true  # run up to hashes collection; ignore build fail for now
-        shell: bash
+      - name: Probe upstream hashes
+        run: bash scripts/probe_hashes.sh
 
-      - name: Extract current hashes for comparison
+      - name: Compare hashes
         id: hashes
         run: |
           set -euo pipefail
-          test -f out/hashes.txt || { echo "No hashes.txt found"; cat out/BuildLog.txt || true; exit 1; }
+          test -f out/hashes.txt || { echo "No hashes.txt found"; exit 1; }
           echo "---- current hashes ----"
           cat out/hashes.txt || true
           echo "---- previous hashes ----"
           cat prev_hashes.txt || true
-
           if cmp -s out/hashes.txt prev_hashes.txt; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Stop early if nothing changed upstream
+      - name: No upstream changes — skipping build
         if: steps.hashes.outputs.changed == 'false'
-        run: |
-          echo "No upstream changes in mpv/ffmpeg/libass/libplacebo. Skipping build + release."
-          exit 0
+        run: echo "No upstream changes in mpv/ffmpeg/libass/libplacebo. Skipping build + release."
 
-      # Re-run the build for real (fresh workspace); previous run may have partially built or failed early
+      # Real build starts here (only when changes were detected)
       - name: Clean workdir for real build
+        if: steps.hashes.outputs.changed == 'true'
         run: |
-          git clean -fdx
+          set -euo pipefail
+          rm -rf mpv-build
+          git clean -ffdx
 
       - name: Full build & package
+        if: steps.hashes.outputs.changed == 'true'
         id: build
         run: |
           set -euo pipefail
           bash scripts/build_and_package.sh
-        shell: bash
 
-      - name: Upload build artifacts (always keep a copy)
+      - name: Upload build artifacts
+        if: steps.hashes.outputs.changed == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: mpv-deb-${{ steps.build.outputs.VERSION }}-${{ steps.build.outputs.ARCH }}
@@ -106,18 +107,15 @@ jobs:
           retention-days: 14
 
       - name: Create GitHub Release
+        if: steps.hashes.outputs.changed == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: mpv-${{ steps.build.outputs.VERSION }}-${{ github.run_id }}
           name: mpv ${{ steps.build.outputs.VERSION }}
           body: |
             Automated daily build for mpv ${{ steps.build.outputs.VERSION }}.
-
-            Upstream hashes:
-            ```
-            ${{ steps.hashes.outputs.changed && '' }}
-            ```
-            See `hashes.txt` asset for details. Full build log attached as `BuildLog.txt`.
+            Upstream component commit hashes are attached as `hashes.txt`.
+            See `BuildLog.txt` for full logs.
           files: |
             out/*.deb
             out/BuildLog.txt
@@ -126,9 +124,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Update state branch with current hashes
+        if: steps.hashes.outputs.changed == 'true'
+        env:
+          VERSION: ${{ steps.build.outputs.VERSION }}
         run: |
           set -euo pipefail
-          # switch to (or create) state branch
           if git ls-remote --exit-code origin state >/dev/null 2>&1; then
             git fetch origin state:state
             git checkout state
@@ -136,7 +136,6 @@ jobs:
             git checkout --orphan state
             git rm -rf . || true
           fi
-
           cp -f out/hashes.txt hashes.txt
           git add hashes.txt
           git -c user.name="github-actions" -c user.email="github-actions@users.noreply.github.com" \
