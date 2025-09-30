@@ -1,0 +1,144 @@
+name: Daily mpv Debian build
+
+on:
+  schedule:
+    # Runs every day at 05:00 UTC
+    - cron: "0 5 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write   # create releases + push state branch
+  actions: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out this repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # we will create/update a state branch
+
+      - name: Print environment
+        run: bash scripts/print_env.sh
+
+      - name: Install base toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git build-essential pkg-config ccache python3 python3-pip \
+            autoconf automake libtool yasm nasm \
+            ninja-build meson \
+            libssl-dev libgnutls28-dev \
+            libx11-dev libxext-dev libxv-dev libxinerama-dev libxrandr-dev libxpresent-dev \
+            libgl1-mesa-dev \
+            libasound2-dev libpulse-dev \
+            libfreetype6-dev libfontconfig1-dev libfribidi-dev \
+            libjpeg-dev
+
+      - name: Prepare state (previous hashes)
+        id: state
+        run: |
+          set -euo pipefail
+          # Try to get the state branch (holds hashes.txt)
+          if git ls-remote --exit-code origin state >/dev/null 2>&1; then
+            git fetch origin state:state
+            git checkout state
+            cp -f hashes.txt ../prev_hashes.txt || true
+            git checkout -
+          fi
+          if [[ ! -f prev_hashes.txt ]]; then
+            echo "(no previous hashes; will build if anything exists)"
+            touch prev_hashes.txt
+          fi
+
+      - name: Clone & update mpv-build; record current hashes
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          bash scripts/build_and_package.sh || true  # run up to hashes collection; ignore build fail for now
+        shell: bash
+
+      - name: Extract current hashes for comparison
+        id: hashes
+        run: |
+          set -euo pipefail
+          test -f out/hashes.txt || { echo "No hashes.txt found"; cat out/BuildLog.txt || true; exit 1; }
+          echo "---- current hashes ----"
+          cat out/hashes.txt || true
+          echo "---- previous hashes ----"
+          cat prev_hashes.txt || true
+
+          if cmp -s out/hashes.txt prev_hashes.txt; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Stop early if nothing changed upstream
+        if: steps.hashes.outputs.changed == 'false'
+        run: |
+          echo "No upstream changes in mpv/ffmpeg/libass/libplacebo. Skipping build + release."
+          exit 0
+
+      # Re-run the build for real (fresh workspace); previous run may have partially built or failed early
+      - name: Clean workdir for real build
+        run: |
+          git clean -fdx
+
+      - name: Full build & package
+        id: build
+        run: |
+          set -euo pipefail
+          bash scripts/build_and_package.sh
+        shell: bash
+
+      - name: Upload build artifacts (always keep a copy)
+        uses: actions/upload-artifact@v4
+        with:
+          name: mpv-deb-${{ steps.build.outputs.VERSION }}-${{ steps.build.outputs.ARCH }}
+          path: |
+            out/*.deb
+            out/BuildLog.txt
+            out/hashes.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: mpv-${{ steps.build.outputs.VERSION }}-${{ github.run_id }}
+          name: mpv ${{ steps.build.outputs.VERSION }}
+          body: |
+            Automated daily build for mpv ${{ steps.build.outputs.VERSION }}.
+
+            Upstream hashes:
+            ```
+            ${{ steps.hashes.outputs.changed && '' }}
+            ```
+            See `hashes.txt` asset for details. Full build log attached as `BuildLog.txt`.
+          files: |
+            out/*.deb
+            out/BuildLog.txt
+            out/hashes.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update state branch with current hashes
+        run: |
+          set -euo pipefail
+          # switch to (or create) state branch
+          if git ls-remote --exit-code origin state >/dev/null 2>&1; then
+            git fetch origin state:state
+            git checkout state
+          else
+            git checkout --orphan state
+            git rm -rf . || true
+          fi
+
+          cp -f out/hashes.txt hashes.txt
+          git add hashes.txt
+          git -c user.name="github-actions" -c user.email="github-actions@users.noreply.github.com" \
+            commit -m "state: update hashes for mpv ${VERSION:-unknown} run ${GITHUB_RUN_ID}"
+          git push origin state
