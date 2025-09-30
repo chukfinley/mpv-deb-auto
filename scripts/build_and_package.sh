@@ -1,16 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Workspace layout (CI expects this):
-#   $GITHUB_WORKSPACE/
-#     mpv-build/        # cloned here
-#     out/              # final artifacts (we create)
-#
-# Produces:
-#   out/mpv_<version>_<arch>.deb
-#   out/BuildLog.txt
-#   out/hashes.txt
-
 ROOT="$(pwd)"
 LOG="$ROOT/out/BuildLog.txt"
 
@@ -25,25 +15,33 @@ echo "[*] Syncing subprojects..."
 ./update
 
 echo "[*] Applying mpv configure options..."
-# Ship libmpv (you removed the distro libmpv2, so no conflict for you)
+# Ship libmpv (you removed distro libmpv2, so no conflict)
 printf "%s\n" -Dlibmpv=true > mpv_options
-# Ensure scripting backend is built (OSC + stats use Lua scripts)
+# Enable scripting backend (needed for osc/stats)
 printf "%s\n" -Dlua=luajit >> mpv_options
 
-# Install the OSC/stats and extra Lua tools into the .deb
+# ---- Debian packaging tweaks ----
 mkdir -p debian
+
+# 1) Install osc.lua + stats.lua + TOOLS lua helpers into system scripts dir
 cat > debian/mpv.install <<'EOF'
 mpv/player/lua/*.lua usr/share/mpv/scripts/
 mpv/TOOLS/lua/*      usr/share/mpv/scripts/
 EOF
 
-# Optional: ffmpeg encoders (uncomment if you want these)
-# {
-#   printf "%s\n" --enable-libx264
-#   printf "%s\n" --enable-libmp3lame
-#   printf "%s\n" --enable-libfdk-aac
-#   printf "%s\n" --enable-nonfree
-# } >> ffmpeg_options
+# 2) System-wide defaults to auto-load osc + stats so users get UI/`i` out of the box
+mkdir -p debian/tmp
+cat > debian/tmp/mpv.conf <<'EOF'
+# Auto-load UI and stats scripts system-wide
+script=/usr/share/mpv/scripts/osc.lua
+script=/usr/share/mpv/scripts/stats.lua
+EOF
+# Tell debhelper where to place it
+# (we use debian/install to copy our prepared file)
+cat > debian/install <<'EOF'
+tmp/mpv.conf etc/mpv/
+EOF
+# ---------------------------------
 
 # Record upstream hashes for change detection and release notes
 echo "[*] Capturing upstream hashes..."
@@ -66,7 +64,6 @@ CORES=$(nproc || echo 2)
 
 cd ..
 
-# Determine artifact info
 ARCH="$(dpkg --print-architecture)"
 DEB="$(ls -1 mpv_*_"$ARCH".deb | head -n1 || true)"
 if [[ -z "$DEB" ]]; then
@@ -74,17 +71,13 @@ if [[ -z "$DEB" ]]; then
   exit 2
 fi
 
-# Extract Debian version (may include epoch, e.g. 2:2025.09.30.x)
 VERSION="$(dpkg-parsechangelog -S Version -l mpv-build/debian/changelog)"
-
-# Create a filesystem/tag-safe variant (GitHub disallows ':' etc.)
 VERSION_SAFE="$(printf '%s' "$VERSION" | tr -c 'A-Za-z0-9._-' '-' | tr -s '-')"
 VERSION_SAFE="${VERSION_SAFE##-}"; VERSION_SAFE="${VERSION_SAFE%%-}"
 
 echo "[*] Built package: $DEB (version $VERSION, arch $ARCH)"
 mv "$DEB" out/
 
-# Emit outputs for the workflow
 {
   echo "VERSION=$VERSION"
   echo "VERSION_SAFE=$VERSION_SAFE"
