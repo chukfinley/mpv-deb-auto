@@ -25,13 +25,12 @@ echo "[*] Syncing subprojects..."
 ./update
 
 echo "[*] Applying mpv configure options..."
-# Avoid dpkg conflict with Ubuntu's libmpv2 package by not shipping libmpv.so
-printf "%s\n" -Dlibmpv=false > mpv_options
+# Ship libmpv (you removed the distro libmpv2, so no conflict for you)
+printf "%s\n" -Dlibmpv=true > mpv_options
 # Ensure scripting backend is built (OSC + stats use Lua scripts)
 printf "%s\n" -Dlua=luajit >> mpv_options
 
-# Ensure the OSC/stats and extra Lua tools are installed into the .deb
-# (Debian packaging in mpv-build doesn't install these by default.)
+# Install the OSC/stats and extra Lua tools into the .deb
 mkdir -p debian
 cat > debian/mpv.install <<'EOF'
 mpv/player/lua/*.lua usr/share/mpv/scripts/
@@ -79,9 +78,7 @@ fi
 VERSION="$(dpkg-parsechangelog -S Version -l mpv-build/debian/changelog)"
 
 # Create a filesystem/tag-safe variant (GitHub disallows ':' etc.)
-# Replace any char not in [A-Za-z0-9._-] with '-' and collapse runs.
 VERSION_SAFE="$(printf '%s' "$VERSION" | tr -c 'A-Za-z0-9._-' '-' | tr -s '-')"
-# Trim leading/trailing '-'
 VERSION_SAFE="${VERSION_SAFE##-}"; VERSION_SAFE="${VERSION_SAFE%%-}"
 
 echo "[*] Built package: $DEB (version $VERSION, arch $ARCH)"
