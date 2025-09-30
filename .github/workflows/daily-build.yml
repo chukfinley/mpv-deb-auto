@@ -98,7 +98,8 @@ jobs:
         if: steps.hashes.outputs.changed == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: mpv-deb-${{ steps.build.outputs.VERSION }}-${{ steps.build.outputs.ARCH }}
+          # Use VERSION_SAFE to avoid invalid characters like colon (:) in artifact names
+          name: mpv-deb-${{ steps.build.outputs.VERSION_SAFE }}-${{ steps.build.outputs.ARCH }}
           path: |
             out/*.deb
             out/BuildLog.txt
@@ -110,7 +111,9 @@ jobs:
         if: steps.hashes.outputs.changed == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: mpv-${{ steps.build.outputs.VERSION }}-${{ github.run_id }}
+          # Tags also should avoid ':'
+          tag_name: mpv-${{ steps.build.outputs.VERSION_SAFE }}-${{ github.run_id }}
+          # Human-readable name can keep the original Debian version (with epoch)
           name: mpv ${{ steps.build.outputs.VERSION }}
           body: |
             Automated daily build for mpv ${{ steps.build.outputs.VERSION }}.
