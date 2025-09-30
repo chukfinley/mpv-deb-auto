@@ -29,19 +29,8 @@ jobs:
       - name: Install base toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            git build-essential pkg-config ccache python3 python3-pip \
-            autoconf automake libtool yasm nasm \
-            ninja-build meson \
-            # LuaJIT (build + runtime, needed for OSC/stats)
-            luajit libluajit-5.1-dev \
-            libssl-dev libgnutls28-dev \
-            libx11-dev libxext-dev libxv-dev libxinerama-dev libxrandr-dev libxpresent-dev \
-            libgl1-mesa-dev \
-            libasound2-dev libpulse-dev \
-            libfreetype6-dev libfontconfig1-dev libfribidi-dev \
-            libjpeg-dev \
-            devscripts equivs
+          sudo apt-get install -y git build-essential pkg-config ccache python3 python3-pip autoconf automake libtool yasm nasm ninja-build meson luajit libluajit-5.1-dev libssl-dev libgnutls28-dev libx11-dev libxext-dev libxv-dev libxinerama-dev libxrandr-dev libxpresent-dev libgl1-mesa-dev libasound2-dev libpulse-dev libfreetype6-dev libfontconfig1-dev libfribidi-dev libjpeg-dev devscripts equivs
+          luajit -v || true
 
       - name: Prepare state (previous hashes)
         id: state
@@ -99,7 +88,6 @@ jobs:
         if: steps.hashes.outputs.changed == 'true'
         uses: actions/upload-artifact@v4
         with:
-          # Use VERSION_SAFE to avoid invalid characters like colon (:) in artifact names
           name: mpv-deb-${{ steps.build.outputs.VERSION_SAFE }}-${{ steps.build.outputs.ARCH }}
           path: |
             out/*.deb
@@ -112,16 +100,14 @@ jobs:
         if: steps.hashes.outputs.changed == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          # Tags must avoid ':'
           tag_name: mpv-${{ steps.build.outputs.VERSION_SAFE }}-${{ github.run_id }}
-          # Human-readable name can keep the original Debian version (with epoch)
           name: mpv ${{ steps.build.outputs.VERSION }}
           body: |
             Automated daily build for mpv ${{ steps.build.outputs.VERSION }}.
 
             Notes:
             - LuaJIT scripting enabled (OSC/`i` stats).
-            - libmpv shared library disabled to avoid conflicts with distro package `libmpv2`.
+            - libmpv shared library included.
             - Install with: sudo apt install ./mpv_<version>_<arch>.deb  (pulls runtime deps)
 
           files: |
@@ -137,7 +123,7 @@ jobs:
           VERSION: ${{ steps.build.outputs.VERSION }}
         run: |
           set -euo pipefail
-          if git ls-remote --exit-code origin state >/devnull 2>&1; then
+          if git ls-remote --exit-code origin state >/dev/null 2>&1; then
             git fetch origin state:state
             git checkout state
           else
