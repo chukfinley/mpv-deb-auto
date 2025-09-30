@@ -64,6 +64,20 @@ fi
 # Extract Debian version (may include epoch, e.g. 2:2025.09.30.x)
 VERSION="$(dpkg-parsechangelog -S Version -l mpv-build/debian/changelog)"
 
-# Create a filesystem/tag-safe variant (no spaces or punctuation that GH disallows)
-# Replace anything not [A-Za-z0-9._-] with '-'
-VERSION_SAFE="$(printf '%s' "$VERSION" | sed -e 's/[^A-Za-z0-9.]()_
+# Create a filesystem/tag-safe variant (GitHub disallows ':' etc.)
+# Replace any char not in [A-Za-z0-9._-] with '-' and collapse runs.
+VERSION_SAFE="$(printf '%s' "$VERSION" | tr -c 'A-Za-z0-9._-' '-' | tr -s '-')"
+# Trim leading/trailing '-'
+VERSION_SAFE="${VERSION_SAFE##-}"
+VERSION_SAFE="${VERSION_SAFE%%-}"
+
+echo "[*] Built package: $DEB (version $VERSION, arch $ARCH)"
+mv "$DEB" out/
+
+# Emit outputs for the workflow
+{
+  echo "VERSION=$VERSION"
+  echo "VERSION_SAFE=$VERSION_SAFE"
+  echo "ARCH=$ARCH"
+  echo "DEB=out/$DEB"
+} >> "$GITHUB_OUTPUT"
