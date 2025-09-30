@@ -137,7 +137,7 @@ jobs:
           VERSION: ${{ steps.build.outputs.VERSION }}
         run: |
           set -euo pipefail
-          if git ls-remote --exit-code origin state >/dev/null 2>&1; then
+          if git ls-remote --exit-code origin state >/devnull 2>&1; then
             git fetch origin state:state
             git checkout state
           else

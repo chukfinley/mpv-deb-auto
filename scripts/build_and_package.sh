@@ -30,6 +30,14 @@ printf "%s\n" -Dlibmpv=false > mpv_options
 # Ensure scripting backend is built (OSC + stats use Lua scripts)
 printf "%s\n" -Dlua=luajit >> mpv_options
 
+# Ensure the OSC/stats and extra Lua tools are installed into the .deb
+# (Debian packaging in mpv-build doesn't install these by default.)
+mkdir -p debian
+cat > debian/mpv.install <<'EOF'
+mpv/player/lua/*.lua usr/share/mpv/scripts/
+mpv/TOOLS/lua/*      usr/share/mpv/scripts/
+EOF
+
 # Optional: ffmpeg encoders (uncomment if you want these)
 # {
 #   printf "%s\n" --enable-libx264
