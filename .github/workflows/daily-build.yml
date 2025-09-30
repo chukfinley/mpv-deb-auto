@@ -2,8 +2,7 @@ name: Daily mpv Debian build
 
 on:
   schedule:
-    # Runs every day at 05:00 UTC
-    - cron: "0 5 * * *"
+    - cron: "0 5 * * *"   # daily at 05:00 UTC
   workflow_dispatch: {}
 
 permissions:
@@ -34,6 +33,8 @@ jobs:
             git build-essential pkg-config ccache python3 python3-pip \
             autoconf automake libtool yasm nasm \
             ninja-build meson \
+            # LuaJIT (build + runtime, needed for OSC/stats)
+            luajit libluajit-5.1-dev \
             libssl-dev libgnutls28-dev \
             libx11-dev libxext-dev libxv-dev libxinerama-dev libxrandr-dev libxpresent-dev \
             libgl1-mesa-dev \
@@ -111,14 +112,18 @@ jobs:
         if: steps.hashes.outputs.changed == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          # Tags also should avoid ':'
+          # Tags must avoid ':'
           tag_name: mpv-${{ steps.build.outputs.VERSION_SAFE }}-${{ github.run_id }}
           # Human-readable name can keep the original Debian version (with epoch)
           name: mpv ${{ steps.build.outputs.VERSION }}
           body: |
             Automated daily build for mpv ${{ steps.build.outputs.VERSION }}.
-            Upstream component commit hashes are attached as `hashes.txt`.
-            See `BuildLog.txt` for full logs.
+
+            Notes:
+            - LuaJIT scripting enabled (OSC/`i` stats).
+            - libmpv shared library disabled to avoid conflicts with distro package `libmpv2`.
+            - Install with: sudo apt install ./mpv_<version>_<arch>.deb  (pulls runtime deps)
+
           files: |
             out/*.deb
             out/BuildLog.txt

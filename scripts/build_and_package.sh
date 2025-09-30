@@ -24,6 +24,12 @@ cd mpv-build
 echo "[*] Syncing subprojects..."
 ./update
 
+echo "[*] Applying mpv configure options..."
+# Avoid dpkg conflict with Ubuntu's libmpv2 package by not shipping libmpv.so
+printf "%s\n" -Dlibmpv=false > mpv_options
+# Ensure scripting backend is built (OSC + stats use Lua scripts)
+printf "%s\n" -Dlua=luajit >> mpv_options
+
 # Optional: ffmpeg encoders (uncomment if you want these)
 # {
 #   printf "%s\n" --enable-libx264
@@ -68,8 +74,7 @@ VERSION="$(dpkg-parsechangelog -S Version -l mpv-build/debian/changelog)"
 # Replace any char not in [A-Za-z0-9._-] with '-' and collapse runs.
 VERSION_SAFE="$(printf '%s' "$VERSION" | tr -c 'A-Za-z0-9._-' '-' | tr -s '-')"
 # Trim leading/trailing '-'
-VERSION_SAFE="${VERSION_SAFE##-}"
-VERSION_SAFE="${VERSION_SAFE%%-}"
+VERSION_SAFE="${VERSION_SAFE##-}"; VERSION_SAFE="${VERSION_SAFE%%-}"
 
 echo "[*] Built package: $DEB (version $VERSION, arch $ARCH)"
 mv "$DEB" out/
