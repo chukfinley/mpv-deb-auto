@@ -1,4 +1,4 @@
-mpv:115b87b521185a25d2c2d39ce80c8516535f1c47:https://github.com/mpv-player/mpv.git
-ffmpeg:8de8405796df0c11c52772dd14bf6ed552d25c07:https://github.com/FFmpeg/FFmpeg.git
+mpv:e5486b96d7d06dd148337899bfdc46bf25101663:https://github.com/mpv-player/mpv.git
+ffmpeg:d09d5afc3aebede25d2d245ee23b75a47ea17c3a:https://github.com/FFmpeg/FFmpeg.git
 libass:4af3320969f1a4a63ee37b72002f39278151f8fa:https://github.com/libass/libass.git
 libplacebo:a7a18af88ff0a17c04840dcb3246047bb6b46df3:https://github.com/haasn/libplacebo.git
